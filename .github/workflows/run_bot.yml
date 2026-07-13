@@ -22,10 +22,9 @@ jobs:
 
     - name: Install Dependencies
       run: |
-        pip install "python-telegram-bot>=20.0" dnspython
+        pip install -r requirements.txt
 
     - name: Run Bot Script
       run: |
         cd fox
         timeout 18000 python py.py || echo "Timeout reached, preparing next run..."
-        
