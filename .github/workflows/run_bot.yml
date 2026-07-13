@@ -3,8 +3,6 @@ name: Run Telegram Bot 24/7
 on:
   push:
     branches: [ main ]
-  schedule:
-    - cron: '0 */5 * * *'
   workflow_dispatch:
 
 jobs:
@@ -13,18 +11,15 @@ jobs:
 
     steps:
     - name: Checkout Repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: '3.10'
 
-    - name: Install Dependencies
+    - name: Run Bot Script inside Fox Folder
+      env:
+        PYTHONUNBUFFERED: "1"
       run: |
-        pip install -r requirements.txt
-
-    - name: Run Bot Script
-      run: |
-        cd fox
-        timeout 18000 python py.py || echo "Timeout reached, preparing next run..."
+        python fox/py.py
