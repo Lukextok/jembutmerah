@@ -2,7 +2,7 @@ import sys
 import subprocess
 import os
 
-# 🔥 AUTO-INSTALLER AKTIF & AMAN DI ROOT SERVER
+# 🔥 AUTO-INSTALLER DEPENDENSI SERVER
 def install_missing_packages():
     required_packages = {
         "telegram": "python-telegram-bot",
@@ -30,10 +30,6 @@ import smtplib
 import imaplib
 import dns.resolver
 import socket
-import threading
-import requests
-import base64
-from http.server import BaseHTTPRequestHandler, HTTPServer
 from email.message import EmailMessage
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
@@ -44,17 +40,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# 📂 JALUR FILE DIKUNCI DI LUAR FOLDER (ROOT)
+# JALUR BERKAS DATABASE DI LUAR FOLDER (ROOT)
 USER_DATA_FILE = "users_db.json"
 GMAIL_FILE = "gmail.txt"
 
-# 🔑 --- KONFIGURASI AKSES REPOSITORY GITHUB ---
-GITHUB_TOKEN = "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" 
-GITHUB_REPO = "Lukextok/jembutmerah"
-GITHUB_BRANCH = "main"
-
 running_tasks = {}
 user_states = {}
+
+# 🔌 --- SETTING DNS INTERNAL ---
 CUSTOM_DNS = ["8.8.8.8", "1.1.1.1", "8.8.4.4"]
 
 def custom_getaddrinfo(*args, **kwargs):
@@ -80,65 +73,13 @@ def custom_getaddrinfo(*args, **kwargs):
 org_getaddrinfo = socket.getaddrinfo
 socket.getaddrinfo = custom_getaddrinfo
 
-class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.send_header('Content-type', 'text/plain')
-        self.end_headers()
-        self.wfile.write(b'Bot Active 24/7')
-    def log_message(self, format, *args): return
-
-threading.Thread(target=lambda: HTTPServer(('0.0.0.0', 7860), SimpleHTTPRequestHandler).serve_forever(), daemon=True).start()
-
-def push_gmail_to_github(new_gmail, new_pass):
-    if not GITHUB_TOKEN or "MASUKKAN" in GITHUB_TOKEN: return False
-    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{GMAIL_FILE}"
-    headers = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
-    current_content = ""
-    sha = None
-    res = requests.get(url, headers=headers)
-    if res.status_code == 200:
-        data = res.json()
-        sha = data["sha"]
-        current_content = base64.b64decode(data["content"]).decode("utf-8")
-    new_line = f"{new_gmail} {new_pass}"
-    if new_line in current_content: return True
-    updated_content = current_content.strip() + f"\n{new_line}\n"
-    payload = {
-        "message": f"🤖 Bot Auto-Save: Menambahkan {new_gmail}",
-        "content": base64.b64encode(updated_content.encode("utf-8")).decode("utf-8"),
-        "branch": GITHUB_BRANCH
-    }
-    if sha: payload["sha"] = sha
-    res_put = requests.put(url, headers=headers, json=payload)
-    return res_put.status_code in [200, 201]
-
-def delete_gmail_from_github(gmail_to_delete):
-    if not GITHUB_TOKEN or "MASUKKAN" in GITHUB_TOKEN: return False
-    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{GMAIL_FILE}"
-    headers = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
-    res = requests.get(url, headers=headers)
-    if res.status_code != 200: return False
-    data = res.json()
-    sha = data["sha"]
-    current_content = base64.b64decode(data["content"]).decode("utf-8")
-    lines = current_content.splitlines()
-    updated_lines = [line for line in lines if not line.startswith(gmail_to_delete)]
-    updated_content = "\n".join(updated_lines) + "\n"
-    payload = {
-        "message": f"🤖 Bot Auto-Delete: Menghapus {gmail_to_delete}",
-        "content": base64.b64encode(updated_content.encode("utf-8")).decode("utf-8"),
-        "sha": sha,
-        "branch": GITHUB_BRANCH
-    }
-    res_put = requests.put(url, headers=headers, json=payload)
-    return res_put.status_code == 200
-
+# --- DATABASE LOGIC ---
 def load_users():
     if os.path.exists(USER_DATA_FILE):
         try:
             with open(USER_DATA_FILE, 'r') as f:
-                return json.load(f)
+                data = json.load(f)
+                return data if isinstance(data, dict) else {}
         except: return {}
     return {}
 
@@ -154,6 +95,8 @@ def get_user_profile(user_id):
             "targets": ["support@support.whatsapp.com", "smb@support.whatsapp.com"],
             "active_target": "support@support.whatsapp.com"
         }
+    
+    # Sync otomatis membaca data langsung dari file gmail.txt lokal
     pasukan_gmail = []
     if os.path.exists(GMAIL_FILE):
         try:
@@ -165,6 +108,7 @@ def get_user_profile(user_id):
                         if len(parts) >= 2:
                             pasukan_gmail.append({"gmail": parts[0].strip(), "pass": "".join(parts[1:]).strip()})
         except: pass
+            
     users[user_id]["accounts"] = pasukan_gmail
     save_user(users)
     return users[user_id]
@@ -178,6 +122,7 @@ def is_valid_number(text):
     cleaned = text.strip().replace(" ", "").replace("-", "")
     return bool(re.match(r'^\+[1-9]\d{6,14}$', cleaned))
 
+# --- GMAIL CLEANER (IMAP) ---
 def clean_gmail_logs(gmail_user, gmail_pass, targets):
     try:
         mail = imaplib.IMAP4_SSL("imap.gmail.com", timeout=20)
@@ -195,6 +140,7 @@ def clean_gmail_logs(gmail_user, gmail_pass, targets):
         mail.logout()
     except: pass
 
+# --- KEYBOARD MARKUP ---
 def get_main_keyboard():
     keyboard = [
         [KeyboardButton("📞 Input Number"), KeyboardButton("📁 Get File")],
@@ -215,30 +161,38 @@ def get_settings_inline_kb(profile):
         icon = "🟢" if tgt == active else "⚪"
         buttons.append([InlineKeyboardButton(f"{icon} {tgt}", callback_data=f"set_active_{index}")])
     buttons.append([InlineKeyboardButton("➕ Tambah Target Email", callback_data="add_new_target")])
+    
     buttons.append([InlineKeyboardButton("── 📨 EMAIL PENGIRIM (SENDER) ──", callback_data="none")])
     accounts = profile.get("accounts", [])
     if not accounts:
         buttons.append([InlineKeyboardButton("❌ Belum ada email pengirim", callback_data="none")])
     else:
         for idx, acc in enumerate(accounts):
-            buttons.append([InlineKeyboardButton(f"▫️ {acc['gmail']}", callback_data="none"), InlineKeyboardButton("🗑️", callback_data=f"del_sender_{idx}")])
+            buttons.append([
+                InlineKeyboardButton(f"▫️ {acc['gmail']}", callback_data="none"),
+                InlineKeyboardButton("🗑️", callback_data=f"del_sender_{idx}")
+            ])
+            
     buttons.append([InlineKeyboardButton("➕ Tambah Email Pengirim", callback_data="add_new_sender")])
     return InlineKeyboardMarkup(buttons)
 
+# --- HANDLERS ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     user_states[user_id] = None
     profile = get_user_profile(user_id)
     acc_list = profile.get("accounts", [])
     active_target = profile.get("active_target", "_Belum Dipilih_")
+    
     display = "\n".join([f"▫️ {a['gmail']}" for a in acc_list]) if acc_list else "_Belum ada akun_"
+    
     text = (
-        "📨 *BOT BYPASS FIX RED (CLOUD QUEUE)*\n"
+        "📨 *BOT BYPASS FIX RED (QUEUE MODE)*\n"
         "━━━━━━━━━━━━━━━━━━\n"
         f"Total Email Pengirim: *{len(acc_list)}*\n"
         f"🎯 Target Tujuan Saat Ini: `{active_target}`\n\n"
         f"{display}\n\n"
-        "⚡ *Sistem:* Auto-save ke Cloud Github Aktif! Akun permanen anti-hilang."
+        "⚡ *Sistem:* 1 Email = 1 Proses Bersamaan (Antrean Otomatis Aktif)."
     )
     await update.message.reply_text(text, reply_markup=get_main_keyboard(), parse_mode='Markdown')
 
@@ -247,6 +201,7 @@ async def handle_button_clicks(update: Update, context: ContextTypes.DEFAULT_TYP
     user_id = str(update.effective_user.id)
     profile = get_user_profile(user_id)
     user_states[user_id] = None
+    
     if text_clicked == "📞 Input Number":
         await update.message.reply_text("🚀 Silakan kirim daftar nomor target atau **kirim file .txt**.\n⚠️ *Ingat: Nomor wajib menggunakan tanda + di depannya!*")
     elif text_clicked == "📁 Get File":
@@ -257,7 +212,13 @@ async def handle_button_clicks(update: Update, context: ContextTypes.DEFAULT_TYP
     elif text_clicked == "👥 Leaderboard":
         await update.message.reply_text("🏆 Fitur peringkat pengguna aktif.")
     elif text_clicked == "⚙️ Setting":
-        text_settings = f"⚙️ *PENGATURAN*\n🎯 Target Saat Ini: `{profile.get('active_target')}`\n📨 Total Pengirim: *{len(profile.get('accounts', []))}*"
+        text_settings = (
+            "⚙️ *PENGATURAN & PANEL KONTROL*\n"
+            "━━━━━━━━━━━━━━━━━━\n"
+            f"🎯 Target Saat Ini: `{profile.get('active_target')}`\n"
+            f"📨 Total Pengirim: *{len(profile.get('accounts', []))}*\n\n"
+            "👇 *Gunakan panel menu interaktif di bawah untuk mengelola:* "
+        )
         await update.message.reply_text(text_settings, reply_markup=get_settings_inline_kb(profile), parse_mode='Markdown')
     elif text_clicked == "❌ Cancel":
         if user_id in running_tasks and not running_tasks[user_id].done():
@@ -271,6 +232,7 @@ async def inline_callback_handler(update: Update, context: ContextTypes.DEFAULT_
     user_id = str(query.from_user.id)
     profile = get_user_profile(user_id)
     await query.answer()
+    
     if query.data == "none": return
     elif query.data.startswith("set_active_"):
         index = int(query.data.replace("set_active_", ""))
@@ -284,38 +246,34 @@ async def inline_callback_handler(update: Update, context: ContextTypes.DEFAULT_
         accounts = profile.get("accounts", [])
         if 0 <= index < len(accounts):
             removed = accounts.pop(index)
-            await query.message.reply_text(f"⏳ Sedang menghapus `{removed['gmail']}`...")
-            success = await asyncio.to_thread(delete_gmail_from_github, removed['gmail'])
-            if success:
-                profile["accounts"] = accounts
-                update_user_profile(user_id, profile)
-                await query.edit_message_reply_markup(reply_markup=get_settings_inline_kb(profile))
-                await query.message.reply_text(f"🗑️ Email `{removed['gmail']}` sukses terhapus.")
+            profile["accounts"] = accounts
+            update_user_profile(user_id, profile)
+            await query.edit_message_reply_markup(reply_markup=get_settings_inline_kb(profile))
+            await query.message.reply_text(f"🗑️ Email pengirim `{removed['gmail']}` berhasil dihapus.")
     elif query.data == "add_new_target":
         user_states[user_id] = "WAITING_TARGET"
         await query.message.reply_text("📝 Silakan langsung ketik alamat email target baru kamu:", parse_mode='Markdown')
     elif query.data == "add_new_sender":
         user_states[user_id] = "WAITING_SENDER"
-        await query.message.reply_text("📝 Silakan kirim data dengan format:\n`Gmail` `SandiAplikasi` (Dipisah Spasi)", parse_mode='Markdown')
+        await query.message.reply_text("📝 Silakan langsung kirim data akun pengirim baru dengan format:\n`Gmail` `SandiAplikasi` (Dipisah Spasi)", parse_mode='Markdown')
 
 async def handle_text_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     state = user_states.get(user_id)
     profile = get_user_profile(user_id)
     text_input = update.message.text.strip()
+    
     if state == "WAITING_SENDER":
         user_states[user_id] = None
         parts = text_input.split()
         if len(parts) >= 2:
-            gmail, app_pass = parts[0].strip(), "".join(parts[1:]).strip()
-            status_wait = await update.message.reply_text("⏳ Sinkronisasi Commit ke GitHub...")
-            success = await asyncio.to_thread(push_gmail_to_github, gmail, app_pass)
-            await status_wait.delete()
-            if success:
-                if not any(acc['gmail'] == gmail for acc in profile["accounts"]):
-                    profile["accounts"].append({"gmail": gmail, "pass": app_pass})
-                    update_user_profile(user_id, profile)
-                await update.message.reply_text(f"✅ Email Pengirim `{gmail}` Berhasil disimpan Permanen!", reply_markup=get_main_keyboard())
+            gmail = parts[0].strip()
+            app_pass = "".join(parts[1:]).strip()
+            profile["accounts"].append({"gmail": gmail, "pass": app_pass})
+            update_user_profile(user_id, profile)
+            await update.message.reply_text(f"✅ Email Pengirim `{gmail}` disimpan!", reply_markup=get_main_keyboard())
+        else:
+            await update.message.reply_text("❌ Format salah!", reply_markup=get_main_keyboard())
         return
     elif state == "WAITING_TARGET":
         user_states[user_id] = None
@@ -324,16 +282,20 @@ async def handle_text_messages(update: Update, context: ContextTypes.DEFAULT_TYP
             profile["active_target"] = text_input
             update_user_profile(user_id, profile)
             await update.message.reply_text(f"🎯 Target diaktifkan:\n`{text_input}`", reply_markup=get_main_keyboard(), parse_mode='Markdown')
+        else:
+            await update.message.reply_text("❌ Tidak valid!", reply_markup=get_main_keyboard())
         return
+
     numbers = [n.strip() for n in text_input.splitlines() if is_valid_number(n.strip())]
     if numbers:
         if user_id in running_tasks and not running_tasks[user_id].done():
-            await update.message.reply_text("⚠️ Proses lama masih berjalan.")
+            await update.message.reply_text("⚠️ Proses lama masih berjalan. Tekan `❌ Cancel` dulu.")
             return
-        await update.message.reply_text("⏳ Memulai pengiriman antrean...", reply_markup=get_cancel_keyboard())
+        await update.message.reply_text("⏳ Memulai pengiriman antrean... Menu dialihkan ke mode interupsi.", reply_markup=get_cancel_keyboard())
         task = asyncio.create_task(execute_parallel_queue(update, numbers, profile))
         running_tasks[user_id] = task
 
+# --- INDIVIDUAL SMTP CORE ---
 async def kirim_email_tunggal(num, acc, target_email, pesan_pilihan, status_msg):
     def _execute_smtp():
         smtp = smtplib.SMTP('smtp.gmail.com', 587, timeout=30)
@@ -350,20 +312,31 @@ async def kirim_email_tunggal(num, acc, target_email, pesan_pilihan, status_msg)
         await asyncio.to_thread(_execute_smtp)
         await asyncio.sleep(4)
         await asyncio.to_thread(clean_gmail_logs, acc['gmail'], acc['pass'], [target_email])
-        await status_msg.edit_text(f"🏁 *SELESAI BERSAMAAN*\nNo: `{num}`\n✅ DONE & CLEANED", parse_mode='Markdown')
+        await status_msg.edit_text(f"🏁 *SELESAI BERSAMAAN*\nNo: `{num}`\n✅ DONE & CLEANED\nVia: `{acc['gmail'][:5]}***`", parse_mode='Markdown')
+    except asyncio.CancelledError:
+        await status_msg.edit_text(f"❌ Proses `{num}` Dihentikan paksa.")
+        raise
     except Exception as e:
-        await status_msg.edit_text(f"❌ Error: {e}")
+        await status_msg.edit_text(f"❌ Error Jaringan (`{acc['gmail'][:5]}`): {e}")
 
+# 🚀 --- NEW ENGINE: EMAIL SLOT WORKER QUEUE ---
 async def email_worker(queue, acc, target_email, update):
     templates = [
         "Здравствуйте, команда поддержки WhatsApp.Я обращаюсь к вам с серьёзной проблемой, связанной с моим номером WhatsApp. Каждый раз, когда я пытаюсь зарегистрироваться или masuk к номер {nomor}, muncul pesan error Login not available.",
         "Құрметті WhatsAppЖеке нөмірімді тіркеу кезінде мәселе туындады, {nomor} нөмірімді тіркеуге көмектесіңіз."
     ]
     while not queue.empty():
-        try: num = queue.get_nowait()
-        except: break
+        try:
+            num = queue.get_nowait()
+        except asyncio.QueueEmpty:
+            break
+        
         pesan_pilihan = random.choice(templates)
-        status_msg = await update.message.reply_text(f"📨 *SLOT ACTIVE*\nNo: `{num}`\nVia: `{acc['gmail'][:5]}***`")
+        status_msg = await update.message.reply_text(
+            f"📨 *SLOT ACTIVE*\nNo: `{num}`\n🎯 Target: `{target_email}`\nVia: `{acc['gmail'][:5]}***`\n⏳ Memproses...",
+            parse_mode='Markdown'
+        )
+        
         await kirim_email_tunggal(num, acc, target_email, pesan_pilihan, status_msg)
         queue.task_done()
         await asyncio.sleep(1)
@@ -372,9 +345,16 @@ async def execute_parallel_queue(update: Update, numbers, profile):
     user_id = str(update.effective_user.id)
     acc_list = profile.get("accounts", [])
     target_email = profile.get("active_target", "support@support.whatsapp.com")
+    
     queue = asyncio.Queue()
-    for num in numbers: await queue.put(num)
-    workers = [asyncio.create_task(email_worker(queue, acc, target_email, update)) for acc in acc_list]
+    for num in numbers:
+        await queue.put(num)
+        
+    workers = []
+    for acc in acc_list:
+        worker = asyncio.create_task(email_worker(queue, acc, target_email, update))
+        workers.append(worker)
+        
     try:
         if workers:
             await asyncio.gather(*workers)
@@ -387,25 +367,40 @@ async def execute_parallel_queue(update: Update, numbers, profile):
 async def process_file_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     user_states[user_id] = None
-    if user_id in running_tasks and not running_tasks[user_id].done(): return
+    if user_id in running_tasks and not running_tasks[user_id].done():
+        await update.message.reply_text("⚠️ Proses lama masih berjalan. Tekan `❌ Cancel` dulu.")
+        return
+
     profile = get_user_profile(user_id)
-    if not profile.get("accounts"): return
+    if not profile.get("accounts"): 
+        await update.message.reply_text("⚠️ Pasukan Gmail kosong! Harap isi berkas gmail.txt di GitHub.")
+        return
+
     document = update.message.document
-    if not document.file_name.endswith('.txt'): return
+    if not document.file_name.endswith('.txt'):
+        await update.message.reply_text("❌ Jenis file salah!")
+        return
+
     status_loading = await update.message.reply_text("📥 _Mengunduh file teks..._", parse_mode='Markdown')
     try:
         tg_file = await context.bot.get_file(document.file_id)
         file_bytes = await tg_file.download_as_bytearray()
-        numbers = [n.strip() for n in file_bytes.decode('utf-8').splitlines() if is_valid_number(n.strip())]
+        file_content = file_bytes.decode('utf-8')
+        numbers = [n.strip() for n in file_content.splitlines() if is_valid_number(n.strip())]
         await status_loading.delete()
-        if not numbers: return
-        await update.message.reply_text(f"📋 Terdeteksi *{len(numbers)} nomor*.")
+        
+        if not numbers:
+            await update.message.reply_text("❌ Tidak ada nomor valid.")
+            return
+
+        await update.message.reply_text(f"📋 Terdeteksi *{len(numbers)} nomor* di dalam file.\nMemulai antrean slot...", reply_markup=get_cancel_keyboard(), parse_mode='Markdown')
         task = asyncio.create_task(execute_parallel_queue(update, numbers, profile))
         running_tasks[user_id] = task
     except Exception as e:
         await status_loading.edit_text(f"❌ Gagal: {e}")
 
 async def main_async():
+    # ⚡ TOKEN DIKUNCI LANGSUNG AGAR LANGSUNG JALAN
     TOKEN = "8756606308:AAGPX-6rn7SPYEyG_DarddcbcN8W9UYSaGQ"
     app = Application.builder().token(TOKEN).connect_timeout(60).read_timeout(60).build()
     
@@ -422,13 +417,16 @@ async def main_async():
     await app.start()
     await app.updater.start_polling()
     
+    # PENGUNCI CLOUD JAGA AGAR SERVER TIDAK MATI
     stop_signal = asyncio.Event()
     await stop_signal.wait()
 
 def main():
-    try: asyncio.run(main_async())
-    except (KeyboardInterrupt, SystemExit): print("🛑 Bot dimatikan.")
+    try:
+        asyncio.run(main_async())
+    except (KeyboardInterrupt, SystemExit):
+        print("🛑 Bot dimatikan.")
 
 if __name__ == "__main__":
     main()
-    
+                                       
