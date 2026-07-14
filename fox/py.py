@@ -1,7 +1,28 @@
-import os
 import sys
-import logging
+import subprocess
+import os
+
+# 🔥 AUTO-INSTALLER AKTIF & AMAN
+def install_missing_packages():
+    required_packages = {
+        "telegram": "python-telegram-bot",
+        "dns": "dnspython",
+        "requests": "requests"
+    }
+    for module, package in required_packages.items():
+        try:
+            __import__(module)
+        except ImportError:
+            print(f"📦 [SISTEM] Modul '{module}' tidak ditemukan. Menginstal {package}...")
+            subprocess.check_call([sys.executable, "-m", "pip", "install", package])
+
+install_missing_packages()
+
+# ==========================================
+# LOAD UTAMA SETELAH AUTO-INSTALL
+# ==========================================
 import asyncio
+import logging
 import json
 import re
 import random
@@ -18,7 +39,7 @@ from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboard
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 
 # ==========================================
-# 1. KONFIGURASI LOGGING & PATH FILE
+# 1. KONFIGURASI LOGGING & PATH FILE (FOLDER FOX)
 # ==========================================
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -26,15 +47,16 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-USER_DATA_FILE = "users_db.json"
-TOKEN_FILE = "token.txt"
-GMAIL_FILE = "gmail.txt"
+USER_DATA_FILE = "fox/users_db.json"
+GMAIL_FILE = "fox/gmail.txt"
 
 # 🔑 --- KONFIGURASI AKSES REPOSITORY GITHUB ---
-# Token Github kamu sudah disuntikkan secara aman di sini
 GITHUB_TOKEN = "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" 
 GITHUB_REPO = "Lukextok/Bot-fix-merah"
 GITHUB_BRANCH = "main"
+
+# 👑 --- HAK AKSES OWNER BOT ---
+OWNER_ID = 5699879334  
 
 running_tasks = {}
 user_states = {}
@@ -72,19 +94,17 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
         self.send_header('Content-type', 'text/plain')
         self.end_headers()
         self.wfile.write(b'Bot Active 24/7')
-    def log_message(self, format, *args):
-        return
+    def log_message(self, format, *args): return
 
 threading.Thread(target=lambda: HTTPServer(('0.0.0.0', 7860), SimpleHTTPRequestHandler).serve_forever(), daemon=True).start()
 
 # --- GITHUB FILE AUTOMATION (SAVE TO GITHUB REPO) ---
 def push_gmail_to_github(new_gmail, new_pass):
-    """Fungsi otomatis menyimpan data dari Telegram langsung ke gmail.txt di GitHub Repo via API"""
     if not GITHUB_TOKEN or "MASUKKAN" in GITHUB_TOKEN:
         print("⚠️ GitHub Token belum dikonfigurasi.")
         return False
         
-    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/fox/{GMAIL_FILE}"
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{GMAIL_FILE}"
     headers = {
         "Authorization": f"token {GITHUB_TOKEN}",
         "Accept": "application/vnd.github.v3+json"
@@ -93,22 +113,19 @@ def push_gmail_to_github(new_gmail, new_pass):
     current_content = ""
     sha = None
     
-    # 1. Ambil isi file gmail.txt yang ada di Github saat ini
     res = requests.get(url, headers=headers)
     if res.status_code == 200:
         data = res.json()
         sha = data["sha"]
         current_content = base64.b64decode(data["content"]).decode("utf-8")
     
-    # 2. Gabungkan data baru ke baris paling bawah
     new_line = f"{new_gmail} {new_pass}"
     if new_line in current_content:
-        return True # Sudah ada, abaikan
+        return True
         
     updated_content = current_content.strip() + f"\n{new_line}\n"
     encoded_content = base64.b64encode(updated_content.encode("utf-8")).decode("utf-8")
     
-    # 3. Commit dan Push kembali ke Github
     payload = {
         "message": f"🤖 Bot Auto-Save: Menambahkan {new_gmail}",
         "content": encoded_content,
@@ -121,9 +138,8 @@ def push_gmail_to_github(new_gmail, new_pass):
     return put_res.status_code in [200, 201]
 
 def delete_gmail_from_github(gmail_to_delete):
-    """Fungsi menghapus akun langsung dari file gmail.txt di GitHub via API"""
     if not GITHUB_TOKEN or "MASUKKAN" in GITHUB_TOKEN: return False
-    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/fox/{GMAIL_FILE}"
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{GMAIL_FILE}"
     headers = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
     
     res = requests.get(url, headers=headers)
@@ -133,7 +149,6 @@ def delete_gmail_from_github(gmail_to_delete):
     sha = data["sha"]
     current_content = base64.b64decode(data["content"]).decode("utf-8")
     
-    # Saring baris yang tidak mengandung email yang dihapus
     lines = current_content.splitlines()
     updated_lines = [line for line in lines if not line.startswith(gmail_to_delete)]
     
@@ -160,6 +175,7 @@ def load_users():
     return {}
 
 def save_user(data):
+    os.makedirs(os.path.dirname(USER_DATA_FILE), exist_ok=True)
     with open(USER_DATA_FILE, 'w') as f:
         json.dump(data, f, indent=4)
 
@@ -172,7 +188,6 @@ def get_user_profile(user_id):
             "active_target": "support@support.whatsapp.com"
         }
 
-    # Sinkronisasi membaca dari file gmail.txt lokal di server
     pasukan_gmail = []
     if os.path.exists(GMAIL_FILE):
         try:
@@ -272,6 +287,23 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(text, reply_markup=get_main_keyboard(), parse_mode='Markdown')
 
+async def stats_owner(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id != OWNER_ID:
+        await update.message.reply_text("❌ Perintah ini tidak dikenal atau Anda tidak memiliki akses.")
+        return
+        
+    users_data = load_users()
+    total_users = len(users_data) if users_data else 0
+    
+    text_stats = (
+        "📊 *STATISTIK PENGGUNA BOT (OWNER PANEL)*\n"
+        "━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"👥 Total Pengguna Terdaftar: *{total_users} Orang*\n\n"
+        "ℹ️ _User dihitung berdasarkan orang yang pernah menekan tombol /start pada bot ini._"
+    )
+    await update.message.reply_text(text_stats, parse_mode='Markdown')
+
 async def handle_button_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text_clicked = update.message.text
     user_id = str(update.effective_user.id)
@@ -322,7 +354,6 @@ async def inline_callback_handler(update: Update, context: ContextTypes.DEFAULT_
         accounts = profile.get("accounts", [])
         if 0 <= index < len(accounts):
             removed = accounts.pop(index)
-            # HAPUS PERMANEN DARI GITHUB VIA API
             await query.message.reply_text(f"⏳ Sedang menghapus `{removed['gmail']}` dari Cloud GitHub...")
             success = await asyncio.to_thread(delete_gmail_from_github, removed['gmail'])
             if success:
@@ -353,8 +384,6 @@ async def handle_text_messages(update: Update, context: ContextTypes.DEFAULT_TYP
             app_pass = "".join(parts[1:]).strip()
             
             status_wait = await update.message.reply_text("⏳ Menyimpan dan melakukan Sinkronisasi Commit ke GitHub Repository...")
-            
-            # AUTO-SAVE COMMIT VIA API KE GITHUB REPO
             success = await asyncio.to_thread(push_gmail_to_github, gmail, app_pass)
             await status_wait.delete()
             
@@ -415,7 +444,7 @@ async def kirim_email_tunggal(num, acc, target_email, pesan_pilihan, status_msg)
 # --- EMAIL SLOT WORKER QUEUE ---
 async def email_worker(queue, acc, target_email, update):
     templates = [
-        "Здравствуйте, команда поддержки WhatsApp.Я обращаюсь к вам с серьёзной проблемой, связанной с моим номером WhatsApp. Каждый раз, когда я пытаюсь зарегистрироваться или masuk ke nomor {nomor}, muncul pesan error Login not available.",
+        "Здравствуйте, команда поддержки WhatsApp.Я обращаюсь к вам с серьёзной проблемой, связанной с моим номером WhatsApp. Каждый раз, когда я пытаюсь зарегистрироваться или masuk к номер {nomor}, muncul pesan error Login not available.",
         "Құрметті WhatsAppЖеке нөмірімді тіркеу кезінде мәселе туындады, {nomor} нөмірімді тіркеуге көмектесіңіз."
     ]
     while not queue.empty():
@@ -435,26 +464,4 @@ async def email_worker(queue, acc, target_email, update):
         await asyncio.sleep(1)
 
 async def execute_parallel_queue(update: Update, numbers, profile):
-    user_id = str(update.effective_user.id)
-    acc_list = profile.get("accounts", [])
-    target_email = profile.get("active_target", "support@support.whatsapp.com")
-    
-    queue = asyncio.Queue()
-    for num in numbers:
-        await queue.put(num)
-        
-    workers = []
-    for acc in acc_list:
-        worker = asyncio.create_task(email_worker(queue, acc, target_email, update))
-        workers.append(worker)
-        
-    try:
-        if workers:
-            await asyncio.gather(*workers)
-            await update.message.reply_text("🏁 *SEMUA ANTREAN NOMOR SELESAI DIPROSES!*", reply_markup=get_main_keyboard(), parse_mode='Markdown')
-    except asyncio.CancelledError:
-        for w in workers: w.cancel()
-    finally:
-        if user_id in running_tasks: del running_tasks[user_id]
-
-async def process_file_input(update: Up
+    user
