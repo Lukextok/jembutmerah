@@ -50,7 +50,7 @@ GMAIL_FILE = "gmail.txt"
 
 # 🔑 --- KONFIGURASI AKSES REPOSITORY GITHUB ---
 GITHUB_TOKEN = "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" 
-GITHUB_REPO = "Lukextok/Bot-fix-merah"
+GITHUB_REPO = "Lukextok/jembutmerah"
 GITHUB_BRANCH = "main"
 
 running_tasks = {}
